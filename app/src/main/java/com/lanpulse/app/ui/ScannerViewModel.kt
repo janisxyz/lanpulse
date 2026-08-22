@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lanpulse.app.data.DeviceNamesStore
+import com.lanpulse.app.data.SshCredsStore
 import com.lanpulse.app.model.DeviceKind
 import com.lanpulse.app.model.LanDevice
 import com.lanpulse.app.model.NetworkRange
@@ -20,12 +21,30 @@ import com.lanpulse.app.scan.PortScanner
 import com.lanpulse.app.scan.RangeDetector
 import com.lanpulse.app.scan.ScanEvent
 import com.lanpulse.app.scan.SubnetHunter
+import com.lanpulse.app.ssh.SshShell
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+data class SshUi(
+    val ip: String,
+    val title: String,
+    val port: Int = 22,
+    val user: String,
+    val password: String = "",
+    val remember: Boolean = false,
+    val connecting: Boolean = false,
+    val connected: Boolean = false,
+    val error: String? = null,
+    val output: String = "",
+)
 
 data class UiState(
     val wifi: WifiSnapshot = WifiSnapshot("LanPulse", null, null, null, null, null, null),
@@ -35,15 +54,19 @@ data class UiState(
     val query: String = "",
     val selectedIp: String? = null,
     val portScan: PortScanProgress? = null,
+    val ssh: SshUi? = null,
 )
 
 class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     private val names = DeviceNamesStore(app)
+    private val sshCreds = SshCredsStore(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private var scanJob: Job? = null
     private var portJob: Job? = null
+    private var sshReader: Job? = null
+    private var shell: SshShell? = null
 
     fun refreshNetwork() {
         val ctx = getApplication<Application>()
@@ -160,6 +183,127 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     fun stopPortScan() {
         portJob?.cancel()
         _state.update { it.copy(portScan = it.portScan?.copy(running = false)) }
+    }
+
+    fun openSsh(device: LanDevice) {
+        val guess = guessUser(device)
+        _state.update {
+            it.copy(
+                ssh = SshUi(
+                    ip = device.ip,
+                    title = device.displayName,
+                    port = sshCreds.port(device.ip),
+                    user = sshCreds.user(device.ip, guess),
+                    password = sshCreds.password(device.ip),
+                    remember = sshCreds.remember(device.ip),
+                ),
+            )
+        }
+    }
+
+    fun closeSsh() {
+        sshReader?.cancel()
+        sshReader = null
+        runCatching { shell?.close() }
+        shell = null
+        _state.update { it.copy(ssh = null) }
+    }
+
+    fun sshConnect(user: String, password: String, port: Int, remember: Boolean) {
+        val current = _state.value.ssh ?: return
+        if (current.connecting) return
+        sshCreds.save(current.ip, user, password, port, remember)
+        _state.update {
+            it.copy(
+                ssh = it.ssh?.copy(
+                    user = user,
+                    password = password,
+                    port = port,
+                    remember = remember,
+                    connecting = true,
+                    connected = false,
+                    error = null,
+                    output = "",
+                ),
+            )
+        }
+        sshReader?.cancel()
+        runCatching { shell?.close() }
+        viewModelScope.launch {
+            try {
+                val client = SshShell(File(getApplication<Application>().filesDir, "known_hosts"))
+                withContext(Dispatchers.IO) { client.connect(current.ip, port, user.trim(), password) }
+                shell = client
+                _state.update { s ->
+                    s.copy(ssh = s.ssh?.copy(connecting = false, connected = true, user = user.trim(), port = port))
+                }
+                sshReader = launch(Dispatchers.IO) {
+                    val stream = client.inputStream() ?: return@launch
+                    val buf = ByteArray(4096)
+                    while (isActive) {
+                        val n = stream.read(buf)
+                        if (n < 0) break
+                        val chunk = SshShell.stripAnsi(String(buf, 0, n, Charsets.UTF_8))
+                        if (chunk.isEmpty()) continue
+                        _state.update { s ->
+                            val out = ((s.ssh?.output ?: "") + chunk).takeLast(80_000)
+                            s.copy(ssh = s.ssh?.copy(output = out))
+                        }
+                    }
+                    _state.update { s ->
+                        s.copy(ssh = s.ssh?.copy(connected = false, connecting = false, error = "Session closed"))
+                    }
+                }
+            } catch (e: Exception) {
+                runCatching { shell?.close() }
+                shell = null
+                val msg = e.message.orEmpty()
+                val nice = when {
+                    "Auth fail" in msg || "auth fail" in msg.lowercase() -> "Wrong username or password"
+                    "timeout" in msg.lowercase() || "timed out" in msg.lowercase() -> "Timed out — is SSH open?"
+                    "Connection refused" in msg -> "Connection refused on port $port"
+                    "Network is unreachable" in msg -> "Host unreachable"
+                    else -> msg.ifBlank { "Could not connect" }
+                }
+                _state.update { s ->
+                    s.copy(ssh = s.ssh?.copy(connecting = false, connected = false, error = nice))
+                }
+            }
+        }
+    }
+
+    fun sshSend(text: String) {
+        if (text.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { shell?.write(text) }
+        }
+    }
+
+    fun sshDisconnect() {
+        sshReader?.cancel()
+        sshReader = null
+        runCatching { shell?.close() }
+        shell = null
+        _state.update { s ->
+            s.copy(ssh = s.ssh?.copy(connected = false, connecting = false))
+        }
+    }
+
+    override fun onCleared() {
+        closeSsh()
+        super.onCleared()
+    }
+
+    private fun guessUser(device: LanDevice): String {
+        val v = device.vendor.orEmpty().lowercase()
+        val h = device.hostname.orEmpty().lowercase()
+        return when {
+            "raspberry" in v || "raspberry" in h || h == "pi" || h.startsWith("pi-") -> "pi"
+            "ubiquiti" in v || "unifi" in h || "udm" in h -> "root"
+            "synology" in v || "diskstation" in h -> "admin"
+            device.kind == DeviceKind.GATEWAY -> "admin"
+            else -> "root"
+        }
     }
 
     private fun mergeRanges(current: List<NetworkRange>, incoming: List<NetworkRange>): List<NetworkRange> {

@@ -37,7 +37,9 @@ import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
@@ -89,40 +91,43 @@ fun LanPulseRoot(vm: ScannerViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     val selected = state.devices.find { it.ip == state.selectedIp }
+    val ssh = state.ssh
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = tab == 0 && selected == null,
-                    onClick = {
-                        tab = 0
-                        vm.select(null)
-                    },
-                    icon = { Icon(Icons.Outlined.Wifi, contentDescription = "Discover") },
-                    label = { Text("Discover") },
-                )
-                NavigationBarItem(
-                    selected = tab == 1,
-                    onClick = {
-                        tab = 1
-                        vm.select(null)
-                    },
-                    icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = "Radar") },
-                    label = { Text("Radar") },
-                )
-                NavigationBarItem(
-                    selected = selected != null && tab == 0,
-                    onClick = { },
-                    icon = { Icon(Icons.Outlined.Dns, contentDescription = "Host") },
-                    label = { Text("Host") },
-                    enabled = selected != null,
-                )
+            if (ssh == null) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = tab == 0 && selected == null,
+                        onClick = {
+                            tab = 0
+                            vm.select(null)
+                        },
+                        icon = { Icon(Icons.Outlined.Wifi, contentDescription = "Discover") },
+                        label = { Text("Discover") },
+                    )
+                    NavigationBarItem(
+                        selected = tab == 1,
+                        onClick = {
+                            tab = 1
+                            vm.select(null)
+                        },
+                        icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = "Radar") },
+                        label = { Text("Radar") },
+                    )
+                    NavigationBarItem(
+                        selected = selected != null && tab == 0,
+                        onClick = { },
+                        icon = { Icon(Icons.Outlined.Dns, contentDescription = "Host") },
+                        label = { Text("Host") },
+                        enabled = selected != null,
+                    )
+                }
             }
         },
         floatingActionButton = {
-            if (selected == null) {
+            if (selected == null && ssh == null) {
                 FloatingActionButton(
                     onClick = { if (state.scan.active) vm.stopScan() else vm.startScan() },
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -138,6 +143,14 @@ fun LanPulseRoot(vm: ScannerViewModel) {
         },
     ) { padding ->
         when {
+            ssh != null -> SshPane(
+                ssh = ssh,
+                padding = padding,
+                onClose = vm::closeSsh,
+                onConnect = vm::sshConnect,
+                onDisconnect = vm::sshDisconnect,
+                onSend = vm::sshSend,
+            )
             selected != null -> DevicePane(
                 device = selected,
                 portScan = state.portScan,
@@ -148,8 +161,11 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                 onFull = { vm.startPortScan(selected.ip, true) },
                 onStopPorts = vm::stopPortScan,
                 onRename = { name -> vm.rename(selected.ip, selected.mac, name) },
+                onSsh = { vm.openSsh(selected) },
             )
-            tab == 1 -> RadarPane(state.devices, padding) { vm.select(it) }
+            tab == 1 -> RadarPane(state.devices, padding, onSelect = { vm.select(it) }, onSsh = { ip ->
+                state.devices.find { it.ip == ip }?.let(vm::openSsh)
+            })
             else -> DiscoverPane(state, padding, vm)
         }
     }
@@ -280,13 +296,13 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
             Spacer(Modifier.height(8.dp))
         }
         items(filtered, key = { it.ip }) { device ->
-            DeviceRow(device) { vm.select(device.ip) }
+            DeviceRow(device, onClick = { vm.select(device.ip) }, onSsh = { vm.openSsh(device) })
         }
     }
 }
 
 @Composable
-private fun DeviceRow(device: LanDevice, onClick: () -> Unit) {
+private fun DeviceRow(device: LanDevice, onClick: () -> Unit, onSsh: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -349,6 +365,11 @@ private fun DeviceRow(device: LanDevice, onClick: () -> Unit) {
             color = pingColor(device.pingMs),
             fontFamily = FontFamily.Monospace,
         )
+        if (onSsh != null && device.openPorts.any { it.port == 22 }) {
+            IconButton(onClick = onSsh, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Outlined.Terminal, contentDescription = "SSH", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
     }
 }
 
@@ -379,7 +400,12 @@ private fun pingColor(ms: Float?): Color {
 }
 
 @Composable
-private fun RadarPane(devices: List<LanDevice>, padding: PaddingValues, onSelect: (String) -> Unit) {
+private fun RadarPane(
+    devices: List<LanDevice>,
+    padding: PaddingValues,
+    onSelect: (String) -> Unit,
+    onSsh: (String) -> Unit,
+) {
     val primary = MaterialTheme.colorScheme.primary
     val outline = MaterialTheme.colorScheme.outline
     Column(
@@ -420,7 +446,7 @@ private fun RadarPane(devices: List<LanDevice>, padding: PaddingValues, onSelect
                 .navigationBarsPadding(),
         ) {
             items(devices, key = { it.ip }) { d ->
-                DeviceRow(d) { onSelect(d.ip) }
+                DeviceRow(d, onClick = { onSelect(d.ip) }, onSsh = { onSsh(d.ip) })
             }
         }
     }
@@ -438,6 +464,7 @@ private fun DevicePane(
     onFull: () -> Unit,
     onStopPorts: () -> Unit,
     onRename: (String) -> Unit,
+    onSsh: () -> Unit,
 ) {
     val clip = LocalClipboardManager.current
     val mine = portScan?.takeIf { it.ip == device.ip }
@@ -519,7 +546,7 @@ private fun DevicePane(
                 device.openPorts.forEach { p ->
                     FilterChip(
                         selected = true,
-                        onClick = {},
+                        onClick = { if (p.port == 22) onSsh() },
                         label = { Text("${p.port}/${p.service}", fontFamily = FontFamily.Monospace) },
                     )
                 }
@@ -530,6 +557,15 @@ private fun DevicePane(
                 FilledIconButton(onClick = onPing, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Outlined.Sensors, "Ping")
                 }
+                Button(onClick = onSsh, modifier = Modifier.weight(1f).height(48.dp)) {
+                    Icon(Icons.Outlined.Terminal, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (device.openPorts.any { it.port == 22 }) "SSH" else "SSH…")
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onQuick, modifier = Modifier.weight(1f).height(48.dp)) { Text("Quick · 1k") }
                 OutlinedButton(onClick = onFull, modifier = Modifier.weight(1f).height(48.dp)) { Text("All ports") }
             }
