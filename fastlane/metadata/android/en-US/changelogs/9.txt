@@ -1,0 +1,1 @@
+Target Android 16 (API 36) for Play. Privacy policy expanded for Data safety / GDPR. Extra store screenshots (Radar, Settings, SSH, ports).

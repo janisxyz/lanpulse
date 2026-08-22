@@ -25,7 +25,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Enable Pages if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pages" \
+            -H "Accept: application/vnd.github+json" \
+            -f build_type=workflow
+          true
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs

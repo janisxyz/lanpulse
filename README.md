@@ -4,7 +4,8 @@ Material You LAN scanner for Android — auto-detects every subnet on the phone,
 
 **Repo:** [github.com/janisxyz/lanpulse](https://github.com/janisxyz/lanpulse)  
 **Privacy policy:** [janisxyz.github.io/lanpulse](https://janisxyz.github.io/lanpulse/)  
-**Play listing notes:** [docs/PLAY_STORE.md](docs/PLAY_STORE.md)
+**Play listing notes:** [docs/PLAY_STORE.md](docs/PLAY_STORE.md)  
+**Data safety answers:** [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md)
 
 
 ## What it does (better than a single-/24 ping sweep)
@@ -30,7 +31,7 @@ cd lanpulse
 ./gradlew assembleDebug
 ```
 
-Minimum SDK 26, target 35, Kotlin 2.0, Jetpack Compose + Material 3.
+Minimum SDK 26, target / compile SDK 36, Kotlin 2.0, Jetpack Compose + Material 3.
 
 ## Releases (CI)
 

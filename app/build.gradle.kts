@@ -14,12 +14,12 @@ val appVersionCode: Int = versionProps.getProperty("VERSION_CODE", "1").toInt()
 
 android {
     namespace = "com.lanpulse.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.lanpulse.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersionName
         vectorDrawables.useSupportLibrary = true
