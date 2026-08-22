@@ -108,20 +108,22 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                         label = { Text("Discover") },
                     )
                     NavigationBarItem(
-                        selected = tab == 1,
+                        selected = tab == 1 || selected != null,
                         onClick = {
                             tab = 1
                             vm.select(null)
                         },
-                        icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = "Radar") },
-                        label = { Text("Radar") },
+                        icon = { Icon(Icons.Outlined.Dns, contentDescription = "Hosts") },
+                        label = { Text("Hosts") },
                     )
                     NavigationBarItem(
-                        selected = selected != null && tab == 0,
-                        onClick = { },
-                        icon = { Icon(Icons.Outlined.Dns, contentDescription = "Host") },
-                        label = { Text("Host") },
-                        enabled = selected != null,
+                        selected = tab == 2 && selected == null,
+                        onClick = {
+                            tab = 2
+                            vm.select(null)
+                        },
+                        icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = "Radar") },
+                        label = { Text("Radar") },
                     )
                 }
             }
@@ -163,17 +165,24 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                 onRename = { name -> vm.rename(selected.ip, selected.mac, name) },
                 onSsh = { vm.openSsh(selected) },
             )
-            tab == 1 -> RadarPane(state.devices, padding, onSelect = { vm.select(it) }, onSsh = { ip ->
+            tab == 1 -> HostsPane(state, padding, vm)
+            tab == 2 -> RadarPane(state.devices, padding, onSelect = {
+                tab = 1
+                vm.select(it)
+            }, onSsh = { ip ->
                 state.devices.find { it.ip == ip }?.let(vm::openSsh)
             })
-            else -> DiscoverPane(state, padding, vm)
+            else -> DiscoverPane(state, padding, vm) { ip ->
+                tab = 1
+                vm.select(ip)
+            }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerViewModel) {
+private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerViewModel, onOpenHost: (String) -> Unit) {
     val wifi = state.wifi
     val band = RangeDetector.bandOf(wifi.frequencyMhz)
     val ch = RangeDetector.channelOf(wifi.frequencyMhz)
@@ -294,6 +303,75 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
                 ),
             )
             Spacer(Modifier.height(8.dp))
+        }
+        items(filtered, key = { it.ip }) { device ->
+            DeviceRow(
+                device,
+                onClick = { onOpenHost(device.ip) },
+                onSsh = { vm.openSsh(device) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun HostsPane(state: UiState, padding: PaddingValues, vm: ScannerViewModel) {
+    val filtered = state.devices.filter { d ->
+        val q = state.query.trim().lowercase()
+        q.isEmpty() ||
+            d.displayName.lowercase().contains(q) ||
+            d.ip.contains(q) ||
+            (d.vendor?.lowercase()?.contains(q) == true) ||
+            (d.mac?.lowercase()?.contains(q) == true) ||
+            (d.hostname?.lowercase()?.contains(q) == true)
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+        contentPadding = PaddingValues(
+            top = 12.dp,
+            bottom = padding.calculateBottomPadding() + 96.dp,
+        ),
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("Hosts", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (state.devices.isEmpty()) "Sweep the LAN to fill this list."
+                    else "${filtered.size} of ${state.devices.size} · tap a row for ports, ping, SSH",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            TextField(
+                value = state.query,
+                onValueChange = vm::setQuery,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Name, IP, vendor") },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                ),
+            )
+        }
+        if (filtered.isEmpty()) {
+            item {
+                Text(
+                    if (state.devices.isEmpty()) "No hosts yet. Hit scan on Discover."
+                    else "No match for “${state.query}”.",
+                    modifier = Modifier.padding(20.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         items(filtered, key = { it.ip }) { device ->
             DeviceRow(device, onClick = { vm.select(device.ip) }, onSsh = { vm.openSsh(device) })
