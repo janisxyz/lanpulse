@@ -108,6 +108,7 @@ data class UiText(
     val colorAmber: String,
     val colorForest: String,
     val settingsStayOnPhone: String,
+    val privacyPolicy: String = "Privacy policy",
     val errAuth: String,
     val errTimeout: String,
     val errRefused: String,

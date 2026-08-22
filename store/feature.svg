@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <rect width="1024" height="500" fill="#0B1211"/>
+  <circle cx="200" cy="250" r="150" fill="none" stroke="#115E59" stroke-width="2"/>
+  <circle cx="200" cy="250" r="95" fill="none" stroke="#115E59" stroke-width="2"/>
+  <circle cx="200" cy="250" r="40" fill="none" stroke="#5EEAD4" stroke-width="3"/>
+  <circle cx="200" cy="250" r="8" fill="#5EEAD4"/>
+  <circle cx="290" cy="180" r="7" fill="#5EEAD4"/>
+  <circle cx="140" cy="160" r="6" fill="#99F6E4"/>
+  <circle cx="250" cy="330" r="6" fill="#5EEAD4"/>
+  <text x="400" y="230" fill="#E7F3EF" font-family="system-ui, sans-serif" font-size="72" font-weight="600">LanPulse</text>
+  <text x="400" y="290" fill="#8AA39C" font-family="system-ui, sans-serif" font-size="28">Scan every range. Ping. Ports. SSH.</text>
+</svg>

@@ -2,7 +2,10 @@
 
 Material You LAN scanner for Android — auto-detects every subnet on the phone, sweeps them in parallel, fingerprints hosts, shows live ping, and runs WiFiman-style quick / deep port scans.
 
-**Repo:** [github.com/janisxyz/lanpulse](https://github.com/janisxyz/lanpulse)
+**Repo:** [github.com/janisxyz/lanpulse](https://github.com/janisxyz/lanpulse)  
+**Privacy policy:** [janisxyz.github.io/lanpulse](https://janisxyz.github.io/lanpulse/)  
+**Play listing notes:** [docs/PLAY_STORE.md](docs/PLAY_STORE.md)
+
 
 ## What it does (better than a single-/24 ping sweep)
 

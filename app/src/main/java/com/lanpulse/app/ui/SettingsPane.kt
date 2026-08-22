@@ -1,5 +1,7 @@
 package com.lanpulse.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,12 +25,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.lanpulse.app.BuildConfig
 import com.lanpulse.app.data.Accent
@@ -48,6 +52,7 @@ fun SettingsPane(
     onAccent: (Accent) -> Unit,
 ) {
     val t = LocalUiText.current
+    val context = LocalContext.current
     val dynamicOk = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     Column(
         Modifier
@@ -119,6 +124,11 @@ fun SettingsPane(
 
         Spacer(Modifier.height(8.dp))
         Text(t.settingsStayOnPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(
+            onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://janisxyz.github.io/lanpulse/")))
+            },
+        ) { Text(t.privacyPolicy) }
         Text(
             "LanPulse ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             style = MaterialTheme.typography.bodySmall,

@@ -1,0 +1,17 @@
+LanPulse finds every device on the networks your phone is already on — Wi-Fi, Ethernet, VPN, and hotspot — then shows ping, hostnames, vendors, and open ports.
+
+What you can do
+
+• Auto-detect all attached IPv4 ranges, including extra UniFi / VLAN subnets
+• Parallel host discovery with ICMP, TCP, ARP, and mDNS
+• See hostname, MAC, vendor, ping, and a custom name you set
+• Quick scan of the nmap top ~1000 TCP ports, or a full 1–65535 sweep
+• One-tap SSH shell to a host (password auth, stays on this phone if you remember it)
+• Material You themes: system / light / dark plus teal, raspberry, indigo, amber, forest, or wallpaper color
+• 28 UI languages
+
+Nothing is uploaded. Scan results, names, and optional SSH passwords never leave the device. Android backup is off.
+
+Location permission is only used so Android will let the app read the Wi-Fi name. LanPulse does not use GPS and does not track you.
+
+You need to be on the LAN you want to see. The app does not scan the public internet.

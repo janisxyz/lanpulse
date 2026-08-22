@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths-ignore:
       - "**.md"
+      - "docs/**"
+      - "store/**"
+      - "fastlane/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
     inputs:
       bump:

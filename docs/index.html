@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — LanPulse</title>
+  <meta name="description" content="Privacy policy for the LanPulse Android LAN scanner (com.lanpulse.app)." />
+  <style>
+    :root { color-scheme: light dark; --fg: #111; --muted: #555; --link: #0b57d0; --bg: #fff; --accent: #0f7a7a; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #eee; --muted: #aaa; --link: #80d5d4; --bg: #0b1211; }
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 44rem;
+      margin: 3rem auto;
+      padding: 0 1.25rem 4rem;
+      line-height: 1.55;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    h1 { font-size: 1.75rem; letter-spacing: -0.02em; }
+    h2 { font-size: 1.15rem; margin-top: 2rem; }
+    .meta { color: var(--muted); }
+    a { color: var(--link); }
+    code { font-size: 0.92em; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy for LanPulse</h1>
+  <p class="meta">
+    <strong>Effective date:</strong> 22 August 2026<br />
+    <strong>App:</strong> LanPulse<br />
+    <strong>Package:</strong> <code>com.lanpulse.app</code><br />
+    <strong>Developer:</strong> Janis Schelling (shizoghost)<br />
+    <strong>Contact:</strong> <a href="mailto:shizoghost@exdonuts.com">shizoghost@exdonuts.com</a>
+  </p>
+  <p>LanPulse is a local network utility. It finds devices on networks your phone is already attached to (Wi-Fi, Ethernet, VPN, hotspot), shows ping and open ports, and can open an in-app SSH session to a host you choose.</p>
+
+  <h2>Data we collect</h2>
+  <p>LanPulse does <strong>not</strong> collect, sell, share, or transmit personal data to us or to any third-party analytics, ads, or crash service.</p>
+  <ul>
+    <li>No accounts</li>
+    <li>No analytics or crash reporting SDKs</li>
+    <li>No advertising</li>
+    <li>No cloud backend</li>
+  </ul>
+  <p>The <code>INTERNET</code> permission is used only to talk to devices on <em>your</em> attached networks (ICMP, TCP, mDNS, SSH). The app does not upload scan results.</p>
+
+  <h2>Data that stays on the device</h2>
+  <ul>
+    <li><strong>Scan results</strong> (IP, MAC, hostname, vendor, open ports, ping) live in memory while the app is open. They are not written to our servers.</li>
+    <li><strong>Custom device names</strong> you type are stored in app preferences on this phone.</li>
+    <li><strong>SSH username</strong> (and password only if you tick “remember”) are stored in app preferences on this phone so you can reconnect quickly. Passwords are never logged.</li>
+    <li><strong>Language and theme</strong> stay in app preferences on this phone.</li>
+  </ul>
+  <p>Android backup is disabled for this app, so names, SSH credentials, and settings are not copied to cloud backup. Uninstalling the app deletes them.</p>
+
+  <h2>Permissions</h2>
+  <ul>
+    <li><strong>Internet / network state</strong> — probe hosts on attached LANs and open SSH.</li>
+    <li><strong>Wi-Fi state / nearby Wi-Fi devices</strong> — read SSID, band, and link stats for the Discover header.</li>
+    <li><strong>Location (fine / coarse)</strong> — required by Android to read the Wi-Fi SSID on many versions. LanPulse does not use GPS, does not track you, and does not send location anywhere.</li>
+    <li><strong>Multicast</strong> — mDNS / Bonjour hostname discovery on the LAN.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>The app is not directed at children and does not knowingly collect data from anyone.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, we will update this page and the date above.</p>
+</body>
+</html>
