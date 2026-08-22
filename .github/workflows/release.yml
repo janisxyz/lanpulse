@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver component to bump (none = ship current version.properties)
+        type: choice
+        options: [patch, minor, major, none]
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Bump, build APK + AAB, publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip release]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump version
+        id: ver
+        env:
+          BUMP: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}
+        run: |
+          set -euo pipefail
+          NAME=$(grep -E '^VERSION_NAME=' version.properties | cut -d= -f2 | tr -d '[:space:]')
+          CODE=$(grep -E '^VERSION_CODE=' version.properties | cut -d= -f2 | tr -d '[:space:]')
+          IFS=. read -r MAJ MIN PAT <<EOF
+          $NAME
+          EOF
+
+          HAS_TAG=0
+          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+            HAS_TAG=1
+          fi
+
+          # First ever release keeps 1.0.0 unless a bump was chosen by hand.
+          if [ "$HAS_TAG" = "1" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "$BUMP" != "none" ]; then
+              case "$BUMP" in
+                major) MAJ=$((MAJ + 1)); MIN=0; PAT=0 ;;
+                minor) MIN=$((MIN + 1)); PAT=0 ;;
+                patch) PAT=$((PAT + 1)) ;;
+                *) echo "unknown bump $BUMP" >&2; exit 1 ;;
+              esac
+              CODE=$((CODE + 1))
+              NAME="${MAJ}.${MIN}.${PAT}"
+            fi
+          fi
+
+          cat > version.properties <<EOF
+          # Semver + monotonically increasing Play versionCode.
+          # Bumped by .github/workflows/release.yml — do not hand-edit during a release.
+          VERSION_NAME=$NAME
+          VERSION_CODE=$CODE
+          EOF
+
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NAME" >> "$GITHUB_OUTPUT"
+          echo "Bumped to $NAME ($CODE)"
+
+      - name: Commit version + tag
+        env:
+          NAME: ${{ steps.ver.outputs.name }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- version.properties; then
+            echo "version.properties unchanged"
+          else
+            git add version.properties
+            git commit -m "chore(release): $NAME [skip release]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+            exit 1
+          fi
+          git tag -a "$TAG" -m "LanPulse $NAME"
+          git push origin "$TAG"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode upload keystore
+        id: sign
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          if [ -n "${{ secrets.LANPULSE_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.LANPULSE_KEYSTORE_BASE64 }}" | base64 -d > "$HOME/.android/lanpulse-upload.jks"
+            echo "store=$HOME/.android/lanpulse-upload.jks" >> "$GITHUB_OUTPUT"
+            echo "mode=upload" >> "$GITHUB_OUTPUT"
+          else
+            if [ ! -f "$HOME/.android/debug.keystore" ]; then
+              keytool -genkeypair -v \
+                -keystore "$HOME/.android/debug.keystore" \
+                -storepass android -keypass android \
+                -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            echo "store=$HOME/.android/debug.keystore" >> "$GITHUB_OUTPUT"
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assemble release APK + AAB
+        env:
+          LANPULSE_STORE_FILE: ${{ steps.sign.outputs.store }}
+          LANPULSE_STORE_PASSWORD: ${{ secrets.LANPULSE_KEYSTORE_PASSWORD || 'android' }}
+          LANPULSE_KEY_ALIAS: ${{ secrets.LANPULSE_KEY_ALIAS || 'androiddebugkey' }}
+          LANPULSE_KEY_PASSWORD: ${{ secrets.LANPULSE_KEY_PASSWORD || 'android' }}
+        run: ./gradlew --no-daemon assembleRelease bundleRelease
+
+      - name: Stage artifacts
+        id: art
+        env:
+          NAME: ${{ steps.ver.outputs.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          AAB=$(find app/build/outputs/bundle/release -name '*.aab' | head -n 1)
+          test -n "$APK" && test -n "$AAB"
+          cp "$APK" "dist/LanPulse-${NAME}.apk"
+          cp "$AAB" "dist/LanPulse-${NAME}.aab"
+          echo "apk=dist/LanPulse-${NAME}.apk" >> "$GITHUB_OUTPUT"
+          echo "aab=dist/LanPulse-${NAME}.aab" >> "$GITHUB_OUTPUT"
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LanPulse-${{ steps.ver.outputs.name }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          NAME: ${{ steps.ver.outputs.name }}
+          CODE: ${{ steps.ver.outputs.code }}
+          MODE: ${{ steps.sign.outputs.mode }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<EOF
+          ## LanPulse ${NAME}
+
+          - **versionName:** ${NAME}
+          - **versionCode:** ${CODE}
+          - **signing:** ${MODE} keystore
+          - **APK:** sideload \`LanPulse-${NAME}.apk\`
+          - **AAB:** upload \`LanPulse-${NAME}.aab\` to Play Console
+
+          To sign Play uploads, add repo secrets \`LANPULSE_KEYSTORE_BASE64\`, \`LANPULSE_KEYSTORE_PASSWORD\`, \`LANPULSE_KEY_ALIAS\`, \`LANPULSE_KEY_PASSWORD\`.
+          EOF
+          )
+          gh release create "$TAG" \
+            --title "LanPulse $NAME" \
+            --notes "$NOTES" \
+            "dist/LanPulse-${NAME}.apk" \
+            "dist/LanPulse-${NAME}.aab"

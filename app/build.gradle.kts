@@ -1,8 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val versionProps = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val appVersionName: String = versionProps.getProperty("VERSION_NAME", "1.0.0")
+val appVersionCode: Int = versionProps.getProperty("VERSION_CODE", "1").toInt()
 
 android {
     namespace = "com.lanpulse.app"
@@ -12,14 +20,35 @@ android {
         applicationId = "com.lanpulse.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        create("ci") {
+            val storePath = System.getenv("LANPULSE_STORE_FILE")
+            val resolved = if (!storePath.isNullOrBlank()) {
+                file(storePath)
+            } else {
+                file("${System.getProperty("user.home")}/.android/debug.keystore")
+            }
+            if (resolved.isFile) {
+                storeFile = resolved
+                storePassword = System.getenv("LANPULSE_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("LANPULSE_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("LANPULSE_KEY_PASSWORD") ?: "android"
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            val ci = signingConfigs.getByName("ci")
+            if (ci.storeFile != null) {
+                signingConfig = ci
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

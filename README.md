@@ -17,17 +17,50 @@ Material You LAN scanner for Android — auto-detects every subnet on the phone,
 
 1. Clone this repo.
 2. **File → Open** the project root.
-3. Let Gradle sync. If the wrapper JAR is missing, Android Studio offers *Create Gradle Wrapper* — accept it (Gradle **8.9**).
+3. Let Gradle sync (wrapper is **Gradle 8.9**).
 4. Plug in a phone or start an emulator (API 26+). Run `app`.
 5. Grant **location** (needed to read SSID / BSSID on modern Android) when asked.
 
 ```bash
 git clone https://github.com/janisxyz/lanpulse.git
 cd lanpulse
-# then open the folder in Android Studio
+./gradlew assembleDebug
 ```
 
 Minimum SDK 26, target 35, Kotlin 2.0, Jetpack Compose + Material 3.
+
+## Releases (CI)
+
+GitHub Actions builds a **sideload APK** and a **Play AAB** on every qualifying push to `main`, then publishes a GitHub Release.
+
+| Workflow | When | What |
+|---|---|---|
+| [CI](.github/workflows/ci.yml) | PR + push | `assembleDebug`, upload artifact |
+| [Release](.github/workflows/release.yml) | push to `main`, or **Run workflow** | bump semver, tag `vX.Y.Z`, `assembleRelease` + `bundleRelease`, GitHub Release |
+
+**Versioning** lives in [`version.properties`](version.properties):
+
+- `VERSION_NAME` — semver (`1.0.0`)
+- `VERSION_CODE` — integer, always +1 per release (Play requirement)
+
+Auto-bump is **patch** on each `main` push. First release keeps `1.0.0`. Manual run: **Actions → Release → Run workflow** and pick `patch` / `minor` / `major` / `none`. Commits with `[skip release]` in the message are ignored.
+
+Put this in the commit that should not cut a release:
+
+```text
+[skip release]
+```
+
+### Play signing (optional)
+
+Without secrets, artifacts are signed with the Android **debug** keystore (installable, not for Play). For Play Console, add repository secrets:
+
+| Secret | Value |
+|---|---|
+| `LANPULSE_KEYSTORE_BASE64` | `base64 -w0 upload-keystore.jks` |
+| `LANPULSE_KEYSTORE_PASSWORD` | keystore password |
+| `LANPULSE_KEY_ALIAS` | key alias |
+| `LANPULSE_KEY_PASSWORD` | key password |
 
 ## Permissions
 
