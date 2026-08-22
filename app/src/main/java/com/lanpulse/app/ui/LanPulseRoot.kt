@@ -27,7 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Dns
-import androidx.compose.material.icons.outlined.Radar
+import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sensors
@@ -100,7 +100,7 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                         tab = 1
                         vm.select(null)
                     },
-                    icon = { Icon(Icons.Outlined.Radar, contentDescription = "Radar") },
+                    icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = "Radar") },
                     label = { Text("Radar") },
                 )
                 NavigationBarItem(
@@ -121,7 +121,7 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                     shape = CircleShape,
                 ) {
                     Icon(
-                        if (state.scan.active) Icons.Outlined.Stop else Icons.Outlined.Radar,
+                        if (state.scan.active) Icons.Outlined.Stop else Icons.Outlined.TrackChanges,
                         contentDescription = if (state.scan.active) "Stop" else "Scan",
                     )
                 }
