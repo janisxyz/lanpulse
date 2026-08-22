@@ -8,8 +8,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanpulse.app.ui.LanPulseRoot
 import com.lanpulse.app.ui.ScannerViewModel
+import com.lanpulse.app.ui.i18n.LocalUiText
+import com.lanpulse.app.ui.i18n.resolveUiText
 import com.lanpulse.app.ui.theme.LanPulseTheme
 
 class MainActivity : ComponentActivity() {
@@ -26,8 +34,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestScanPermissions()
         setContent {
-            LanPulseTheme {
-                LanPulseRoot(viewModel)
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            val strings = remember(state.languageTag) { resolveUiText(state.languageTag) }
+            val dir = if (strings.rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+            CompositionLocalProvider(
+                LocalUiText provides strings,
+                LocalLayoutDirection provides dir,
+            ) {
+                LanPulseTheme(themeMode = state.themeMode, accent = state.accent) {
+                    LanPulseRoot(viewModel)
+                }
             }
         }
     }

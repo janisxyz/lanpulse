@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Sensors
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Wifi
@@ -82,6 +83,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanpulse.app.model.DeviceKind
 import com.lanpulse.app.model.LanDevice
 import com.lanpulse.app.scan.RangeDetector
+import com.lanpulse.app.ui.i18n.LocalUiText
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -92,6 +94,7 @@ fun LanPulseRoot(vm: ScannerViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     val selected = state.devices.find { it.ip == state.selectedIp }
     val ssh = state.ssh
+    val t = LocalUiText.current
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -104,17 +107,17 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                             tab = 0
                             vm.select(null)
                         },
-                        icon = { Icon(Icons.Outlined.Wifi, contentDescription = "Discover") },
-                        label = { Text("Discover") },
+                        icon = { Icon(Icons.Outlined.Wifi, contentDescription = t.discover) },
+                        label = { Text(t.discover) },
                     )
                     NavigationBarItem(
-                        selected = tab == 1 || selected != null,
+                        selected = tab == 1 || (selected != null && tab != 3),
                         onClick = {
                             tab = 1
                             vm.select(null)
                         },
-                        icon = { Icon(Icons.Outlined.Dns, contentDescription = "Hosts") },
-                        label = { Text("Hosts") },
+                        icon = { Icon(Icons.Outlined.Dns, contentDescription = t.hosts) },
+                        label = { Text(t.hosts) },
                     )
                     NavigationBarItem(
                         selected = tab == 2 && selected == null,
@@ -122,14 +125,23 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                             tab = 2
                             vm.select(null)
                         },
-                        icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = "Radar") },
-                        label = { Text("Radar") },
+                        icon = { Icon(Icons.Outlined.TrackChanges, contentDescription = t.radar) },
+                        label = { Text(t.radar) },
+                    )
+                    NavigationBarItem(
+                        selected = tab == 3 && selected == null,
+                        onClick = {
+                            tab = 3
+                            vm.select(null)
+                        },
+                        icon = { Icon(Icons.Outlined.Settings, contentDescription = t.settings) },
+                        label = { Text(t.settings) },
                     )
                 }
             }
         },
         floatingActionButton = {
-            if (selected == null && ssh == null) {
+            if (selected == null && ssh == null && tab != 3) {
                 FloatingActionButton(
                     onClick = { if (state.scan.active) vm.stopScan() else vm.startScan() },
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -138,7 +150,7 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                 ) {
                     Icon(
                         if (state.scan.active) Icons.Outlined.Stop else Icons.Outlined.TrackChanges,
-                        contentDescription = if (state.scan.active) "Stop" else "Scan",
+                        contentDescription = if (state.scan.active) t.stop else t.scan,
                     )
                 }
             }
@@ -172,6 +184,15 @@ fun LanPulseRoot(vm: ScannerViewModel) {
             }, onSsh = { ip ->
                 state.devices.find { it.ip == ip }?.let(vm::openSsh)
             })
+            tab == 3 -> SettingsPane(
+                languageTag = state.languageTag,
+                themeMode = state.themeMode,
+                accent = state.accent,
+                padding = padding,
+                onLanguage = vm::setLanguage,
+                onThemeMode = vm::setThemeMode,
+                onAccent = vm::setAccent,
+            )
             else -> DiscoverPane(state, padding, vm) { ip ->
                 tab = 1
                 vm.select(ip)
@@ -183,13 +204,14 @@ fun LanPulseRoot(vm: ScannerViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerViewModel, onOpenHost: (String) -> Unit) {
+    val t = LocalUiText.current
     val wifi = state.wifi
     val band = RangeDetector.bandOf(wifi.frequencyMhz)
     val ch = RangeDetector.channelOf(wifi.frequencyMhz)
     val filtered = state.devices.filter { d ->
         val q = state.query.trim().lowercase()
         if (q.isEmpty()) true
-        else d.displayName.lowercase().contains(q) ||
+        else t.deviceLabel(d).lowercase().contains(q) ||
             d.ip.contains(q) ||
             (d.hostname ?: "").lowercase().contains(q) ||
             (d.vendor ?: "").lowercase().contains(q) ||
@@ -249,7 +271,7 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
                             )
                             Text(r.cidr, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
                             Text(
-                                "$n hosts",
+                                t.hostsCount.format(n),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -258,7 +280,7 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
                 }
                 if (state.ranges.isEmpty()) {
                     Text(
-                        "Connect to Wi-Fi or VPN — ranges appear automatically.",
+                        t.noRanges,
                         Modifier.padding(8.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -277,8 +299,8 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (state.scan.active) "Sweeping ${state.scan.currentIp ?: state.scan.rangeLabel}"
-                    else "${state.devices.size} devices · ${state.ranges.size} ranges",
+                    if (state.scan.active) t.sweeping.format(state.scan.currentIp ?: state.scan.rangeLabel)
+                    else t.devicesRanges.format(state.devices.size, state.ranges.size),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
@@ -292,7 +314,7 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                placeholder = { Text("Name, IP, vendor") },
+                placeholder = { Text(t.searchHint) },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
@@ -316,10 +338,11 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
 
 @Composable
 private fun HostsPane(state: UiState, padding: PaddingValues, vm: ScannerViewModel) {
+    val t = LocalUiText.current
     val filtered = state.devices.filter { d ->
         val q = state.query.trim().lowercase()
         q.isEmpty() ||
-            d.displayName.lowercase().contains(q) ||
+            t.deviceLabel(d).lowercase().contains(q) ||
             d.ip.contains(q) ||
             (d.vendor?.lowercase()?.contains(q) == true) ||
             (d.mac?.lowercase()?.contains(q) == true) ||
@@ -336,10 +359,10 @@ private fun HostsPane(state: UiState, padding: PaddingValues, vm: ScannerViewMod
     ) {
         item {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text("Hosts", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(t.hosts, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (state.devices.isEmpty()) "Sweep the LAN to fill this list."
-                    else "${filtered.size} of ${state.devices.size} · tap a row for ports, ping, SSH",
+                    if (state.devices.isEmpty()) t.hostsEmpty
+                    else t.hostsHint.format(filtered.size, state.devices.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -352,7 +375,7 @@ private fun HostsPane(state: UiState, padding: PaddingValues, vm: ScannerViewMod
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Name, IP, vendor") },
+                placeholder = { Text(t.searchHint) },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
@@ -366,8 +389,8 @@ private fun HostsPane(state: UiState, padding: PaddingValues, vm: ScannerViewMod
         if (filtered.isEmpty()) {
             item {
                 Text(
-                    if (state.devices.isEmpty()) "No hosts yet. Hit scan on Discover."
-                    else "No match for “${state.query}”.",
+                    if (state.devices.isEmpty()) t.hostsNoScan
+                    else t.hostsNoMatch.format(state.query),
                     modifier = Modifier.padding(20.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -381,6 +404,7 @@ private fun HostsPane(state: UiState, padding: PaddingValues, vm: ScannerViewMod
 
 @Composable
 private fun DeviceRow(device: LanDevice, onClick: () -> Unit, onSsh: (() -> Unit)? = null) {
+    val t = LocalUiText.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -402,14 +426,14 @@ private fun DeviceRow(device: LanDevice, onClick: () -> Unit, onSsh: (() -> Unit
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    device.displayName,
+                    t.deviceLabel(device),
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (device.isYou) Badge("YOU")
-                if (device.isGateway) Badge("GW")
+                if (device.isYou) Badge(t.youBadge)
+                if (device.isGateway) Badge(t.gwBadge)
             }
             Text(
                 device.ip,
@@ -445,7 +469,7 @@ private fun DeviceRow(device: LanDevice, onClick: () -> Unit, onSsh: (() -> Unit
         )
         if (onSsh != null && device.openPorts.any { it.port == 22 }) {
             IconButton(onClick = onSsh, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Outlined.Terminal, contentDescription = "SSH", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Outlined.Terminal, contentDescription = t.ssh, tint = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -484,6 +508,7 @@ private fun RadarPane(
     onSelect: (String) -> Unit,
     onSsh: (String) -> Unit,
 ) {
+    val t = LocalUiText.current
     val primary = MaterialTheme.colorScheme.primary
     val outline = MaterialTheme.colorScheme.outline
     Column(
@@ -494,19 +519,19 @@ private fun RadarPane(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "RADAR",
+            t.radarTitle,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 16.dp),
         )
-        Text("Distance by ping", style = MaterialTheme.typography.headlineMedium)
+        Text(t.radarSubtitle, style = MaterialTheme.typography.headlineMedium)
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(320.dp)) {
                 val c = Offset(size.width / 2, size.height / 2)
                 val maxR = size.minDimension / 2f
                 drawCircle(primary.copy(alpha = 0.08f), maxR)
-                listOf(0.3f, 0.55f, 0.8f, 1f).forEach { t ->
-                    drawCircle(outline.copy(alpha = 0.45f), maxR * t, c, style = Stroke(2f))
+                listOf(0.3f, 0.55f, 0.8f, 1f).forEach { frac ->
+                    drawCircle(outline.copy(alpha = 0.45f), maxR * frac, c, style = Stroke(2f))
                 }
                 devices.forEachIndexed { i, d ->
                     val r = maxR * min(0.88f, 0.18f + (d.pingMs ?: 20f) / 70f)
@@ -544,6 +569,7 @@ private fun DevicePane(
     onRename: (String) -> Unit,
     onSsh: () -> Unit,
 ) {
+    val t = LocalUiText.current
     val clip = LocalClipboardManager.current
     val mine = portScan?.takeIf { it.ip == device.ip }
     var draft by remember(device.ip, device.customName) { mutableStateOf(device.customName.orEmpty()) }
@@ -568,14 +594,14 @@ private fun DevicePane(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(device.displayName, style = MaterialTheme.typography.titleLarge)
+                    Text(t.deviceLabel(device), style = MaterialTheme.typography.titleLarge)
                     Text(
                         device.ip,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, "Close") }
+                IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, t.close) }
             }
         }
         item {
@@ -583,8 +609,8 @@ private fun DevicePane(
                 value = draft,
                 onValueChange = { draft = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Custom name") },
-                placeholder = { Text(device.hostname ?: "Name this device") },
+                label = { Text(t.customName) },
+                placeholder = { Text(device.hostname ?: t.nameThisDevice) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onRename(draft) }),
@@ -593,7 +619,7 @@ private fun DevicePane(
                         onClick = { onRename(draft) },
                         enabled = draft.trim() != device.customName.orEmpty(),
                     ) {
-                        Icon(Icons.Outlined.Check, contentDescription = "Save name")
+                        Icon(Icons.Outlined.Check, contentDescription = t.saveName)
                     }
                 },
                 shape = RoundedCornerShape(16.dp),
@@ -601,20 +627,20 @@ private fun DevicePane(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("Ping", device.pingMs?.let { "%.1f ms".format(it) } ?: "—", Modifier.weight(1f))
+                StatCard(t.ping, device.pingMs?.let { "%.1f ms".format(it) } ?: "—", Modifier.weight(1f))
                 StatCard(
-                    "Type",
-                    device.kind.name.lowercase().replaceFirstChar { it.titlecase() },
+                    t.type,
+                    t.kindLabel(device.kind),
                     Modifier.weight(1f),
                 )
-                StatCard("Ports", device.openPorts.size.toString(), Modifier.weight(1f))
+                StatCard(t.ports, device.openPorts.size.toString(), Modifier.weight(1f))
             }
         }
         item {
-            InfoLine("Hostname", device.hostname ?: "Not advertised")
-            InfoLine("MAC", device.mac ?: "No ARP entry")
-            InfoLine("Vendor", device.vendor ?: "Unknown")
-            InfoLine("Services", device.services.joinToString(" · ").ifBlank { "—" })
+            InfoLine(t.hostname, device.hostname ?: t.notAdvertised)
+            InfoLine(t.mac, device.mac ?: t.noArp)
+            InfoLine(t.vendor, device.vendor ?: t.unknown)
+            InfoLine(t.services, device.services.joinToString(" · ").ifBlank { "—" })
         }
         item {
             FlowRow(
@@ -633,28 +659,28 @@ private fun DevicePane(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledIconButton(onClick = onPing, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Outlined.Sensors, "Ping")
+                    Icon(Icons.Outlined.Sensors, t.ping)
                 }
                 Button(onClick = onSsh, modifier = Modifier.weight(1f).height(48.dp)) {
                     Icon(Icons.Outlined.Terminal, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (device.openPorts.any { it.port == 22 }) "SSH" else "SSH…")
+                    Text(if (device.openPorts.any { it.port == 22 }) t.ssh else t.sshDots)
                 }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onQuick, modifier = Modifier.weight(1f).height(48.dp)) { Text("Quick · 1k") }
-                OutlinedButton(onClick = onFull, modifier = Modifier.weight(1f).height(48.dp)) { Text("All ports") }
+                OutlinedButton(onClick = onQuick, modifier = Modifier.weight(1f).height(48.dp)) { Text(t.quickScan) }
+                OutlinedButton(onClick = onFull, modifier = Modifier.weight(1f).height(48.dp)) { Text(t.allPorts) }
             }
         }
         if (mine != null) {
             item {
                 Text(
                     if (mine.running) {
-                        "Scanning ${"%,d".format(mine.scanned)} / ${"%,d".format(mine.total)}"
+                        t.scanningProgress.format("%,d".format(mine.scanned), "%,d".format(mine.total))
                     } else {
-                        "Done · ${mine.results.size} open · ${"%,d".format(mine.total)} probed"
+                        t.scanDone.format(mine.results.size, "%,d".format(mine.total))
                     },
                     style = MaterialTheme.typography.labelSmall,
                 )
@@ -666,14 +692,14 @@ private fun DevicePane(
                         .clip(RoundedCornerShape(99.dp)),
                 )
                 if (mine.running) {
-                    OutlinedButton(onClick = onStopPorts) { Text("Stop") }
+                    OutlinedButton(onClick = onStopPorts) { Text(t.stop) }
                 }
             }
             items(mine.results, key = { it.port }) { p ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("${p.port}  ${p.service}", fontFamily = FontFamily.Monospace)
                     Text(
-                        p.rttMs?.let { "${it} ms" } ?: "open",
+                        p.rttMs?.let { "${it} ms" } ?: t.portOpen,
                         color = MaterialTheme.colorScheme.primary,
                         fontFamily = FontFamily.Monospace,
                     )
@@ -687,7 +713,7 @@ private fun DevicePane(
             ) {
                 Icon(Icons.Outlined.ContentCopy, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Copy IP")
+                Text(t.copyIp)
             }
         }
     }

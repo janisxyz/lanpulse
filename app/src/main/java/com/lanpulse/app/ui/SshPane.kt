@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lanpulse.app.ui.i18n.LocalUiText
 
 @Composable
 fun SshPane(
@@ -65,6 +66,7 @@ fun SshPane(
     var showPw by remember { mutableStateOf(false) }
     var line by remember { mutableStateOf("") }
     val scroll = rememberScrollState()
+    val t = LocalUiText.current
     LaunchedEffect(ssh.output) { scroll.animateScrollTo(scroll.maxValue) }
 
     Column(
@@ -87,14 +89,14 @@ fun SshPane(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, "Close") }
+            IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, t.close) }
         }
         Spacer(Modifier.height(12.dp))
         if (!ssh.connected) {
             OutlinedTextField(
                 value = user,
                 onValueChange = { user = it },
-                label = { Text("Username") },
+                label = { Text(t.username) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -103,7 +105,7 @@ fun SshPane(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Password") },
+                label = { Text(t.password) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 visualTransformation = if (showPw) VisualTransformation.None else PasswordVisualTransformation(),
@@ -123,17 +125,17 @@ fun SshPane(
             OutlinedTextField(
                 value = port,
                 onValueChange = { port = it.filter { ch -> ch.isDigit() }.take(5) },
-                label = { Text("Port") },
+                label = { Text(t.port) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = rememberPw, onCheckedChange = { rememberPw = it })
-                Text("Remember password on this phone", style = MaterialTheme.typography.bodySmall)
+                Text(t.rememberPassword, style = MaterialTheme.typography.bodySmall)
             }
             ssh.error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(t.sshError(it) ?: it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(8.dp))
             }
             Button(
@@ -147,7 +149,7 @@ fun SshPane(
                     CircularProgressIndicator(Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
                 }
-                Text(if (ssh.connecting) "Connecting…" else "Connect")
+                Text(if (ssh.connecting) t.connecting else t.connect)
             }
         } else {
             Surface(
@@ -158,7 +160,7 @@ fun SshPane(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
             ) {
                 Text(
-                    ssh.output.ifBlank { "Connected. Type a command below." },
+                    ssh.output.ifBlank { t.connectedHint },
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(scroll)
@@ -178,14 +180,14 @@ fun SshPane(
                     ) { Text(label, style = MaterialTheme.typography.labelSmall) }
                 }
                 Spacer(Modifier.weight(1f))
-                OutlinedButton(onClick = onDisconnect, modifier = Modifier.height(36.dp)) { Text("Hang up") }
+                OutlinedButton(onClick = onDisconnect, modifier = Modifier.height(36.dp)) { Text(t.hangUp) }
             }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = line,
                 onValueChange = { line = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Command") },
+                placeholder = { Text(t.command) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send, keyboardType = KeyboardType.Ascii),
                 keyboardActions = KeyboardActions(

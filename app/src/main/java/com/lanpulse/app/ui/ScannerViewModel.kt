@@ -3,8 +3,11 @@ package com.lanpulse.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lanpulse.app.data.Accent
+import com.lanpulse.app.data.AppPreferences
 import com.lanpulse.app.data.DeviceNamesStore
 import com.lanpulse.app.data.SshCredsStore
+import com.lanpulse.app.data.ThemeMode
 import com.lanpulse.app.model.DeviceKind
 import com.lanpulse.app.model.LanDevice
 import com.lanpulse.app.model.NetworkRange
@@ -55,11 +58,15 @@ data class UiState(
     val selectedIp: String? = null,
     val portScan: PortScanProgress? = null,
     val ssh: SshUi? = null,
+    val languageTag: String = "",
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val accent: Accent = Accent.TEAL,
 )
 
 class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     private val names = DeviceNamesStore(app)
     private val sshCreds = SshCredsStore(app)
+    private val prefs = AppPreferences(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -67,6 +74,33 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     private var portJob: Job? = null
     private var sshReader: Job? = null
     private var shell: SshShell? = null
+
+    init {
+        val loaded = prefs.load()
+        _state.update {
+            it.copy(languageTag = loaded.languageTag, themeMode = loaded.themeMode, accent = loaded.accent)
+        }
+    }
+
+    fun setLanguage(tag: String) {
+        _state.update { it.copy(languageTag = tag) }
+        persistPrefs()
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        _state.update { it.copy(themeMode = mode) }
+        persistPrefs()
+    }
+
+    fun setAccent(accent: Accent) {
+        _state.update { it.copy(accent = accent) }
+        persistPrefs()
+    }
+
+    private fun persistPrefs() {
+        val s = _state.value
+        prefs.save(com.lanpulse.app.data.AppSettings(s.languageTag, s.themeMode, s.accent))
+    }
 
     fun refreshNetwork() {
         val ctx = getApplication<Application>()
@@ -251,7 +285,7 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                     _state.update { s ->
-                        s.copy(ssh = s.ssh?.copy(connected = false, connecting = false, error = "Session closed"))
+                        s.copy(ssh = s.ssh?.copy(connected = false, connecting = false, error = "closed"))
                     }
                 }
             } catch (e: Exception) {
@@ -259,11 +293,11 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
                 shell = null
                 val msg = e.message.orEmpty()
                 val nice = when {
-                    "Auth fail" in msg || "auth fail" in msg.lowercase() -> "Wrong username or password"
-                    "timeout" in msg.lowercase() || "timed out" in msg.lowercase() -> "Timed out — is SSH open?"
-                    "Connection refused" in msg -> "Connection refused on port $port"
-                    "Network is unreachable" in msg -> "Host unreachable"
-                    else -> msg.ifBlank { "Could not connect" }
+                    "Auth fail" in msg || "auth fail" in msg.lowercase() -> "auth"
+                    "timeout" in msg.lowercase() || "timed out" in msg.lowercase() -> "timeout"
+                    "Connection refused" in msg -> "refused:$port"
+                    "Network is unreachable" in msg || "unreachable" in msg.lowercase() -> "unreach"
+                    else -> msg.ifBlank { "err" }
                 }
                 _state.update { s ->
                     s.copy(ssh = s.ssh?.copy(connecting = false, connected = false, error = nice))
