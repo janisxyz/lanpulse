@@ -23,7 +23,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Dns
@@ -44,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,10 +56,12 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -65,6 +71,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -138,6 +145,7 @@ fun LanPulseRoot(vm: ScannerViewModel) {
                 onQuick = { vm.startPortScan(selected.ip, false) },
                 onFull = { vm.startPortScan(selected.ip, true) },
                 onStopPorts = vm::stopPortScan,
+                onRename = { name -> vm.rename(selected.ip, selected.mac, name) },
             )
             tab == 1 -> RadarPane(state.devices, padding) { vm.select(it) }
             else -> DiscoverPane(state, padding, vm)
@@ -154,7 +162,11 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
     val filtered = state.devices.filter { d ->
         val q = state.query.trim().lowercase()
         if (q.isEmpty()) true
-        else d.hostname.lowercase().contains(q) || d.ip.contains(q) || (d.vendor ?: "").lowercase().contains(q)
+        else d.displayName.lowercase().contains(q) ||
+            d.ip.contains(q) ||
+            (d.hostname ?: "").lowercase().contains(q) ||
+            (d.vendor ?: "").lowercase().contains(q) ||
+            (d.mac ?: "").lowercase().contains(q)
     }
 
     LazyColumn(
@@ -253,7 +265,7 @@ private fun DiscoverPane(state: UiState, padding: PaddingValues, vm: ScannerView
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                placeholder = { Text("Host, IP, vendor") },
+                placeholder = { Text("Name, IP, vendor") },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
@@ -276,6 +288,7 @@ private fun DeviceRow(device: LanDevice, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (device.online) 1f else 0.45f)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -293,22 +306,40 @@ private fun DeviceRow(device: LanDevice, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    device.hostname,
+                    device.displayName,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (device.isYou) Badge("YOU")
                 if (device.isGateway) Badge("GW")
             }
             Text(
-                buildString {
-                    append(device.ip)
-                    device.vendor?.let { append(" · $it") }
-                },
-                style = MaterialTheme.typography.labelSmall,
+                device.ip,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            val extra = buildString {
+                val host = device.hostname
+                if (!device.customName.isNullOrBlank() && !host.isNullOrBlank() && host != device.customName) {
+                    append(host)
+                }
+                device.vendor?.let {
+                    if (isNotEmpty()) append(" · ")
+                    append(it)
+                }
+            }
+            if (extra.isNotBlank()) {
+                Text(
+                    extra,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Text(
             device.pingMs?.let { if (it < 10) "%.1f ms".format(it) else "${it.toInt()} ms" } ?: "—",
@@ -403,9 +434,11 @@ private fun DevicePane(
     onQuick: () -> Unit,
     onFull: () -> Unit,
     onStopPorts: () -> Unit,
+    onRename: (String) -> Unit,
 ) {
     val clip = LocalClipboardManager.current
     val mine = portScan?.takeIf { it.ip == device.ip }
+    var draft by remember(device.ip, device.customName) { mutableStateOf(device.customName.orEmpty()) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -427,11 +460,36 @@ private fun DevicePane(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(device.hostname, style = MaterialTheme.typography.titleLarge)
-                    Text(device.ip, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(device.displayName, style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        device.ip,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, "Close") }
             }
+        }
+        item {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Custom name") },
+                placeholder = { Text(device.hostname ?: "Name this device") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onRename(draft) }),
+                trailingIcon = {
+                    IconButton(
+                        onClick = { onRename(draft) },
+                        enabled = draft.trim() != device.customName.orEmpty(),
+                    ) {
+                        Icon(Icons.Outlined.Check, contentDescription = "Save name")
+                    }
+                },
+                shape = RoundedCornerShape(16.dp),
+            )
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -445,6 +503,7 @@ private fun DevicePane(
             }
         }
         item {
+            InfoLine("Hostname", device.hostname ?: "Not advertised")
             InfoLine("MAC", device.mac ?: "No ARP entry")
             InfoLine("Vendor", device.vendor ?: "Unknown")
             InfoLine("Services", device.services.joinToString(" · ").ifBlank { "—" })

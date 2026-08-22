@@ -5,7 +5,7 @@ import com.lanpulse.app.model.OpenPort
 
 object DeviceClassifier {
     fun classify(
-        hostname: String,
+        hostname: String?,
         vendor: String?,
         ports: List<OpenPort>,
         isGateway: Boolean,
@@ -14,8 +14,8 @@ object DeviceClassifier {
         if (isYou) return DeviceKind.YOU to listOf("This device")
         if (isGateway) return DeviceKind.GATEWAY to listOf("Gateway", "DHCP")
 
-        val h = hostname.lowercase()
-        val v = (vendor ?: "").lowercase()
+        val h = hostname.orEmpty().lowercase()
+        val v = vendor.orEmpty().lowercase()
         val open = ports.map { it.port }.toSet()
         val services = ports.map { it.service }.distinct()
 
@@ -32,8 +32,11 @@ object DeviceClassifier {
             has(445, 139) && has(5000, 5001) -> DeviceKind.NAS
             "reolink" in h || "amcrest" in h || "camera" in h || has(554) -> DeviceKind.CAMERA
             "shelly" in h || "tasmota" in h || "esp" in h || "hue" in h -> DeviceKind.IOT
-            "raspberry" in v || "homeassistant" in h || has(8123) -> DeviceKind.SERVER
-            has(22) && has(80, 443) && "pi" in h -> DeviceKind.SERVER
+            "raspberry" in v || "raspberry" in h || "dietpi" in h || "octopi" in h ||
+                "retropie" in h || "pihole" in h || "pi-hole" in h || h == "pi" ||
+                h.startsWith("raspberrypi") -> DeviceKind.SERVER
+            "homeassistant" in h || "home-assistant" in h || has(8123) -> DeviceKind.SERVER
+            has(22) && "pi" in h -> DeviceKind.SERVER
             "apple" in v && has(62078) -> DeviceKind.PHONE
             "apple" in v && has(548, 5900, 22) -> DeviceKind.COMPUTER
             has(3389, 445, 135) -> DeviceKind.COMPUTER
@@ -47,12 +50,14 @@ object DeviceClassifier {
         return kind to services.ifEmpty { listOf(kind.name.lowercase().replaceFirstChar { it.titlecase() }) }
     }
 
-    fun hostnameOf(ip: String, fallback: String): String {
+    fun dnsHostname(ip: String): String? {
         return try {
-            val host = java.net.InetAddress.getByName(ip).canonicalHostName
-            if (host.isNullOrBlank() || host == ip) fallback else host
+            val host = java.net.InetAddress.getByName(ip).canonicalHostName ?: return null
+            val pretty = DnsPackets.pretty(host)
+            if (pretty.isBlank() || pretty == ip || pretty.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))) null
+            else pretty
         } catch (_: Exception) {
-            fallback
+            null
         }
     }
 }

@@ -3,6 +3,8 @@ package com.lanpulse.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lanpulse.app.data.DeviceNamesStore
+import com.lanpulse.app.model.DeviceKind
 import com.lanpulse.app.model.LanDevice
 import com.lanpulse.app.model.NetworkRange
 import com.lanpulse.app.model.OpenPort
@@ -35,6 +37,7 @@ data class UiState(
 )
 
 class ScannerViewModel(app: Application) : AndroidViewModel(app) {
+    private val names = DeviceNamesStore(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -58,18 +61,27 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     fun setQuery(q: String) = _state.update { it.copy(query = q) }
     fun select(ip: String?) = _state.update { it.copy(selectedIp = ip) }
 
+    fun rename(ip: String, mac: String?, name: String) {
+        names.set(mac, ip, name)
+        val custom = name.trim().ifBlank { null }
+        _state.update { s ->
+            s.copy(devices = s.devices.map { if (it.ip == ip) it.copy(customName = custom) else it })
+        }
+    }
+
     fun startScan() {
         val ranges = _state.value.ranges
         if (ranges.isEmpty() || _state.value.scan.active) return
         scanJob?.cancel()
         _state.update {
             it.copy(
-                devices = emptyList(),
+                devices = it.devices.map { d -> d.copy(online = false) },
                 scan = ScanProgress(active = true, total = ranges.sumOf { r -> r.hostCount }),
             )
         }
+        val ctx = getApplication<Application>()
         scanJob = viewModelScope.launch {
-            HostScanner.scan(ranges).collect { ev ->
+            HostScanner.scan(ctx, ranges).collect { ev ->
                 when (ev) {
                     is ScanEvent.Progress -> _state.update { s ->
                         s.copy(
@@ -83,12 +95,7 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                     is ScanEvent.Host -> _state.update { s ->
-                        val next = (s.devices + ev.device).sortedWith(
-                            compareByDescending<LanDevice> { it.isGateway }
-                                .thenByDescending { it.isYou }
-                                .thenBy { Cidr.ipToLong(it.ip) },
-                        )
-                        s.copy(devices = next.distinctBy { it.ip })
+                        s.copy(devices = upsert(s.devices, ev.device))
                     }
                     ScanEvent.Done -> _state.update { it.copy(scan = it.scan.copy(active = false)) }
                 }
@@ -143,5 +150,37 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     fun stopPortScan() {
         portJob?.cancel()
         _state.update { it.copy(portScan = it.portScan?.copy(running = false)) }
+    }
+
+    private fun upsert(list: List<LanDevice>, incoming: LanDevice): List<LanDevice> {
+        val custom = names.get(incoming.mac, incoming.ip)
+            ?: incoming.mac?.let { names.get(it, incoming.ip) }
+            ?: names.get(null, incoming.ip)
+        val idx = list.indexOfFirst { it.ip == incoming.ip }
+        val merged = if (idx < 0) {
+            incoming.copy(customName = custom ?: incoming.customName, online = true)
+        } else {
+            val old = list[idx]
+            old.copy(
+                hostname = incoming.hostname?.takeIf { it.isNotBlank() } ?: old.hostname,
+                customName = custom ?: old.customName,
+                mac = incoming.mac ?: old.mac,
+                vendor = incoming.vendor ?: old.vendor,
+                kind = if (incoming.kind != DeviceKind.UNKNOWN) incoming.kind else old.kind,
+                pingMs = incoming.pingMs ?: old.pingMs,
+                openPorts = (old.openPorts + incoming.openPorts).distinctBy { it.port },
+                services = (incoming.services + old.services).distinct().ifEmpty { old.services },
+                isGateway = incoming.isGateway || old.isGateway,
+                isYou = incoming.isYou || old.isYou,
+                online = true,
+            )
+        }
+        val next = if (idx < 0) list + merged else list.toMutableList().apply { set(idx, merged) }
+        return next.sortedWith(
+            compareByDescending<LanDevice> { it.isGateway }
+                .thenByDescending { it.isYou }
+                .thenByDescending { it.online }
+                .thenBy { Cidr.ipToLong(it.ip) },
+        )
     }
 }

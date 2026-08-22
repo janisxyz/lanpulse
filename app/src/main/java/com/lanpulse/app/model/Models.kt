@@ -30,7 +30,8 @@ data class OpenPort(
 data class LanDevice(
     val ip: String,
     val rangeId: String,
-    val hostname: String,
+    val hostname: String? = null,
+    val customName: String? = null,
     val mac: String? = null,
     val vendor: String? = null,
     val kind: DeviceKind = DeviceKind.UNKNOWN,
@@ -40,7 +41,17 @@ data class LanDevice(
     val isGateway: Boolean = false,
     val isYou: Boolean = false,
     val online: Boolean = true,
-)
+) {
+    val displayName: String
+        get() = when {
+            !customName.isNullOrBlank() -> customName
+            !hostname.isNullOrBlank() -> hostname
+            isYou -> "This phone"
+            isGateway -> "Gateway"
+            !vendor.isNullOrBlank() -> vendor
+            else -> "Unknown device"
+        }
+}
 
 data class WifiSnapshot(
     val ssid: String,
