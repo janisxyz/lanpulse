@@ -7,6 +7,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -424,6 +426,7 @@ private fun RadarPane(devices: List<LanDevice>, padding: PaddingValues, onSelect
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun DevicePane(
     device: LanDevice,
@@ -509,7 +512,10 @@ private fun DevicePane(
             InfoLine("Services", device.services.joinToString(" · ").ifBlank { "—" })
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 device.openPorts.forEach { p ->
                     FilterChip(
                         selected = true,
@@ -524,14 +530,18 @@ private fun DevicePane(
                 FilledIconButton(onClick = onPing, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Outlined.Sensors, "Ping")
                 }
-                OutlinedButton(onClick = onQuick, modifier = Modifier.weight(1f).height(48.dp)) { Text("Quick ports") }
-                OutlinedButton(onClick = onFull, modifier = Modifier.weight(1f).height(48.dp)) { Text("Deep scan") }
+                OutlinedButton(onClick = onQuick, modifier = Modifier.weight(1f).height(48.dp)) { Text("Quick · 1k") }
+                OutlinedButton(onClick = onFull, modifier = Modifier.weight(1f).height(48.dp)) { Text("All ports") }
             }
         }
         if (mine != null) {
             item {
                 Text(
-                    if (mine.running) "Scanning ${mine.scanned}/${mine.total}" else "Scan complete",
+                    if (mine.running) {
+                        "Scanning ${"%,d".format(mine.scanned)} / ${"%,d".format(mine.total)}"
+                    } else {
+                        "Done · ${mine.results.size} open · ${"%,d".format(mine.total)} probed"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                 )
                 LinearProgressIndicator(

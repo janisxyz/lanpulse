@@ -155,7 +155,7 @@ object HostScanner {
         val vendor = MacVendors.lookup(mac)
         val ports = PortScanner.probeOpen(
             ip,
-            PortCatalog.QUICK.map { it.first },
+            PortCatalog.FINGERPRINT,
             timeoutMs = 160,
         )
         val hostname = knownName

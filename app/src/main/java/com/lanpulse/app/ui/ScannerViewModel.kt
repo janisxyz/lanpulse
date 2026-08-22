@@ -123,7 +123,7 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startPortScan(ip: String, full: Boolean) {
         portJob?.cancel()
-        val total = if (full) PortCatalog.COMMON.size else PortCatalog.QUICK.size
+        val total = if (full) PortCatalog.ALL else PortCatalog.QUICK.size
         _state.update { it.copy(portScan = PortScanProgress(ip, true, 0, total, emptyList())) }
         portJob = viewModelScope.launch {
             val found = mutableListOf<OpenPort>()
@@ -133,13 +133,13 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
                     val devices = if (hit != null) {
                         s.devices.map { d ->
                             if (d.ip == ip && d.openPorts.none { it.port == hit.port }) {
-                                d.copy(openPorts = d.openPorts + hit)
+                                d.copy(openPorts = (d.openPorts + hit).sortedBy { it.port })
                             } else d
                         }
                     } else s.devices
                     s.copy(
                         devices = devices,
-                        portScan = s.portScan?.copy(scanned = scanned, results = found.toList()),
+                        portScan = s.portScan?.copy(scanned = scanned, results = found.sortedBy { it.port }),
                     )
                 }
             }
