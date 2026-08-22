@@ -30,12 +30,12 @@ object PortCatalog {
         8291 to "Winbox", 51820 to "WireGuard",
     )
 
-    val QUICK = COMMON.filter { it.first in QUICK_SET }
-
     private val QUICK_SET = setOf(
         22, 53, 80, 139, 443, 445, 548, 554, 631, 1883, 3306, 3389,
         5000, 5353, 5900, 8008, 8080, 8123, 8443, 9100, 32400, 62078,
     )
+
+    val QUICK = COMMON.filter { it.first in QUICK_SET }
 }
 
 object PortScanner {

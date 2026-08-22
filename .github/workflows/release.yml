@@ -75,28 +75,6 @@ jobs:
           echo "tag=v$NAME" >> "$GITHUB_OUTPUT"
           echo "Bumped to $NAME ($CODE)"
 
-      - name: Commit version + tag
-        env:
-          NAME: ${{ steps.ver.outputs.name }}
-          TAG: ${{ steps.ver.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- version.properties; then
-            echo "version.properties unchanged"
-          else
-            git add version.properties
-            git commit -m "chore(release): $NAME [skip release]"
-            git push origin HEAD:${{ github.ref_name }}
-          fi
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists"
-            exit 1
-          fi
-          git tag -a "$TAG" -m "LanPulse $NAME"
-          git push origin "$TAG"
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -156,6 +134,29 @@ jobs:
           name: LanPulse-${{ steps.ver.outputs.name }}
           path: dist/*
           if-no-files-found: error
+
+      - name: Commit version + tag
+        env:
+          NAME: ${{ steps.ver.outputs.name }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- version.properties; then
+            echo "version.properties unchanged"
+          else
+            git add version.properties
+            git commit -m "chore(release): $NAME [skip release]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Deleting leftover tag $TAG from a failed run"
+            git push origin ":refs/tags/$TAG" || true
+            git tag -d "$TAG" || true
+          fi
+          git tag -a "$TAG" -m "LanPulse $NAME"
+          git push origin "$TAG"
 
       - name: GitHub Release
         env:
