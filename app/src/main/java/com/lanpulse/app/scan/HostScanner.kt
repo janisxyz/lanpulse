@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 sealed interface ScanEvent {
     data class Progress(
@@ -29,24 +30,26 @@ sealed interface ScanEvent {
     ) : ScanEvent
 
     data class Host(val device: LanDevice) : ScanEvent
+    data class Range(val range: NetworkRange) : ScanEvent
     data object Done : ScanEvent
 }
 
 object HostScanner {
     fun scan(context: Context, ranges: List<NetworkRange>): Flow<ScanEvent> = channelFlow {
-        val jobs = ranges.map { range -> range to Cidr.hosts(range.network, range.prefix, cap = 1022) }
-        val total = jobs.sumOf { it.second.size }
+        val allRanges = CopyOnWriteArrayList(ranges)
+        val swept = ConcurrentHashMap.newKeySet<String>()
         val sem = Semaphore(48)
         val mutex = Mutex()
         var scanned = 0
         var found = 0
+        var total = 0
         val seen = ConcurrentHashMap.newKeySet<String>()
         val names = ConcurrentHashMap<String, String>()
         val emitter = this
         val nameHits = Channel<Pair<String, String>>(Channel.UNLIMITED)
 
         fun rangeFor(ip: String): NetworkRange? =
-            ranges.find { Cidr.network(ip, it.prefix) == it.network }
+            allRanges.find { Cidr.contains(it.network, it.prefix, ip) }
 
         suspend fun emitHost(device: LanDevice) {
             val hostname = device.hostname?.takeIf { it.isNotBlank() } ?: names[device.ip]
@@ -55,6 +58,32 @@ object HostScanner {
                 mutex.withLock { found += 1 }
             }
             emitter.send(ScanEvent.Host(withName))
+        }
+
+        suspend fun sweep(range: NetworkRange) {
+            if (!swept.add(range.id)) return
+            val hosts = Cidr.hosts(range.network, range.prefix, cap = 1022)
+            mutex.withLock { total += hosts.size }
+            coroutineScope {
+                hosts.map { ip ->
+                    async(Dispatchers.IO) {
+                        sem.withPermit {
+                            val device = probe(range, ip, names[ip])
+                            mutex.withLock { scanned += 1 }
+                            emitter.send(
+                                ScanEvent.Progress(
+                                    scanned = scanned,
+                                    total = total,
+                                    found = found,
+                                    rangeLabel = range.label,
+                                    ip = ip,
+                                ),
+                            )
+                            if (device != null) emitHost(device)
+                        }
+                    }
+                }.awaitAll()
+            }
         }
 
         val mdnsJob = launch(Dispatchers.IO) {
@@ -89,26 +118,25 @@ object HostScanner {
             }
         }
 
-        coroutineScope {
-            jobs.forEach { (range, hosts) ->
-                hosts.map { ip ->
-                    async(Dispatchers.IO) {
-                        sem.withPermit {
-                            val device = probe(range, ip, names[ip])
-                            mutex.withLock { scanned += 1 }
-                            emitter.send(
-                                ScanEvent.Progress(
-                                    scanned = scanned,
-                                    total = total,
-                                    found = found,
-                                    rangeLabel = range.label,
-                                    ip = ip,
-                                ),
-                            )
-                            if (device != null) emitHost(device)
-                        }
-                    }
-                }.awaitAll()
+        val hunter = async(Dispatchers.IO) { SubnetHunter.hunt(context, ranges) }
+
+        ranges.forEach { sweep(it) }
+
+        hunter.await().forEach { extra ->
+            if (allRanges.none { it.id == extra.id }) {
+                allRanges += extra
+                emitter.send(ScanEvent.Range(extra))
+                sweep(extra)
+            }
+        }
+
+        (ArpTable.snapshot().keys + names.keys).forEach { ip ->
+            if (rangeFor(ip) != null || !Cidr.isRfc1918(ip) || allRanges.size >= 16) return@forEach
+            val extra = SubnetHunter.rangeOf(ip, "Discovered")
+            if (allRanges.none { it.id == extra.id }) {
+                allRanges += extra
+                emitter.send(ScanEvent.Range(extra))
+                sweep(extra)
             }
         }
 

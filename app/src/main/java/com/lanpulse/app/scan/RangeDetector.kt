@@ -34,32 +34,113 @@ object RangeDetector {
             }?.gateway?.hostAddress
 
             val dns = lp.dnsServers.mapNotNull { it.hostAddress }
+            val iface = lp.interfaceName.orEmpty()
 
             lp.linkAddresses.forEach { la ->
                 val addr = la.address
                 if (addr !is Inet4Address || addr.isLoopbackAddress) return@forEach
                 val ip = addr.hostAddress ?: return@forEach
-                val prefix = Cidr.scanPrefix(la.prefixLength)
-                val networkAddr = Cidr.network(ip, prefix)
-                val cidr = "$networkAddr/$prefix"
-                val inferred = inferKind(kind, ip, lp.interfaceName.orEmpty())
-                found[cidr] = NetworkRange(
-                    id = cidr,
-                    cidr = cidr,
-                    network = networkAddr,
-                    prefix = prefix,
-                    kind = inferred,
-                    label = labelFor(inferred, lp.interfaceName.orEmpty()),
-                    interfaceName = lp.interfaceName.orEmpty(),
-                    localIp = ip,
-                    gateway = gateway ?: Cidr.longToIp(Cidr.ipToLong(networkAddr) + 1),
+                put(
+                    found,
+                    ip = ip,
+                    prefixHint = la.prefixLength,
+                    kind = inferKind(kind, ip, iface),
+                    iface = iface,
+                    gateway = gateway,
                     dns = dns,
-                    hostCount = Cidr.hostCount(prefix),
+                    localIp = ip,
+                )
+            }
+
+            lp.routes.forEach { route ->
+                val dest = route.destination ?: return@forEach
+                val addr = dest.address as? Inet4Address ?: return@forEach
+                if (dest.prefixLength == 0 || dest.prefixLength > 30) return@forEach
+                val ip = addr.hostAddress ?: return@forEach
+                if (!Cidr.isRfc1918(ip)) return@forEach
+                val routeGw = (route.gateway as? Inet4Address)?.hostAddress ?: gateway
+                put(
+                    found,
+                    ip = ip,
+                    prefixHint = dest.prefixLength,
+                    kind = if (kind == RangeKind.WIFI || kind == RangeKind.ETHERNET) RangeKind.VLAN else kind,
+                    iface = iface,
+                    gateway = routeGw,
+                    dns = dns,
+                    localIp = null,
+                    labelOverride = if (found.containsKey(Cidr.cidr(Cidr.network(ip, Cidr.scanPrefix(dest.prefixLength)), Cidr.scanPrefix(dest.prefixLength)))) {
+                        null
+                    } else {
+                        "VLAN"
+                    },
                 )
             }
         }
 
+        dhcpRange(context)?.let { dhcp ->
+            val existing = found[dhcp.id]
+            if (existing == null) found[dhcp.id] = dhcp
+        }
+
         return found.values.toList()
+    }
+
+    private fun put(
+        found: LinkedHashMap<String, NetworkRange>,
+        ip: String,
+        prefixHint: Int,
+        kind: RangeKind,
+        iface: String,
+        gateway: String?,
+        dns: List<String>,
+        localIp: String?,
+        labelOverride: String? = null,
+    ) {
+        val prefix = Cidr.scanPrefix(prefixHint)
+        val networkAddr = Cidr.network(ip, prefix)
+        val cidr = "$networkAddr/$prefix"
+        val previous = found[cidr]
+        val inferred = inferKind(kind, ip, iface)
+        found[cidr] = NetworkRange(
+            id = cidr,
+            cidr = cidr,
+            network = networkAddr,
+            prefix = prefix,
+            kind = previous?.kind ?: inferred,
+            label = previous?.label ?: (labelOverride ?: labelFor(inferred, iface)),
+            interfaceName = previous?.interfaceName?.ifBlank { iface } ?: iface,
+            localIp = localIp ?: previous?.localIp,
+            gateway = gateway ?: previous?.gateway ?: Cidr.longToIp(Cidr.ipToLong(networkAddr) + 1),
+            dns = dns.ifEmpty { previous?.dns.orEmpty() },
+            hostCount = Cidr.hostCount(prefix),
+        )
+    }
+
+    private fun dhcpRange(context: Context): NetworkRange? {
+        return try {
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            val dhcp = wm.dhcpInfo ?: return null
+            val ip = intToIp(dhcp.ipAddress) ?: return null
+            val prefix = Cidr.scanPrefix(Cidr.prefixFromMaskLe(dhcp.netmask).takeIf { it in 8..30 } ?: 24)
+            val gw = intToIp(dhcp.gateway)
+            val networkAddr = Cidr.network(ip, prefix)
+            NetworkRange(
+                id = "$networkAddr/$prefix",
+                cidr = "$networkAddr/$prefix",
+                network = networkAddr,
+                prefix = prefix,
+                kind = RangeKind.WIFI,
+                label = "Wi-Fi",
+                interfaceName = "wlan0",
+                localIp = ip,
+                gateway = gw,
+                dns = listOfNotNull(intToIp(dhcp.dns1), intToIp(dhcp.dns2)),
+                hostCount = Cidr.hostCount(prefix),
+            )
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun wifi(context: Context): WifiSnapshot {
@@ -93,6 +174,7 @@ object RangeDetector {
         RangeKind.VPN -> "VPN"
         RangeKind.HOTSPOT -> "Hotspot / USB"
         RangeKind.CELLULAR -> "Cellular"
+        RangeKind.VLAN -> "VLAN"
         RangeKind.OTHER -> iface.ifBlank { "Interface" }
     }
 

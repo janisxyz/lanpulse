@@ -1,6 +1,6 @@
 package com.lanpulse.app.model
 
-enum class RangeKind { WIFI, ETHERNET, VPN, HOTSPOT, CELLULAR, OTHER }
+enum class RangeKind { WIFI, ETHERNET, VPN, HOTSPOT, CELLULAR, VLAN, OTHER }
 
 enum class DeviceKind {
     GATEWAY, YOU, COMPUTER, PHONE, NAS, PRINTER, TV, CAMERA, IOT, CONSOLE, SERVER, AP, UNKNOWN

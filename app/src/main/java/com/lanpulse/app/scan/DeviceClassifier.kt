@@ -36,6 +36,8 @@ object DeviceClassifier {
                 "retropie" in h || "pihole" in h || "pi-hole" in h || h == "pi" ||
                 h.startsWith("raspberrypi") -> DeviceKind.SERVER
             "homeassistant" in h || "home-assistant" in h || has(8123) -> DeviceKind.SERVER
+            "ubiquiti" in v || "ubnt" in v || "unifi" in h || "u7-" in h || "u6-" in h || "uap" in h ->
+                if (isGateway) DeviceKind.GATEWAY else DeviceKind.AP
             has(22) && "pi" in h -> DeviceKind.SERVER
             "apple" in v && has(62078) -> DeviceKind.PHONE
             "apple" in v && has(548, 5900, 22) -> DeviceKind.COMPUTER

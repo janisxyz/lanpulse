@@ -19,6 +19,7 @@ import com.lanpulse.app.scan.PortCatalog
 import com.lanpulse.app.scan.PortScanner
 import com.lanpulse.app.scan.RangeDetector
 import com.lanpulse.app.scan.ScanEvent
+import com.lanpulse.app.scan.SubnetHunter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,9 +53,15 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
             ?: ranges.firstOrNull()?.gateway
         _state.update {
             it.copy(
-                ranges = ranges,
+                ranges = mergeRanges(it.ranges, ranges),
                 wifi = wifi.copy(gateway = gw ?: wifi.gateway, ip = wifi.ip ?: ranges.firstOrNull()?.localIp),
             )
+        }
+        viewModelScope.launch {
+            val extra = SubnetHunter.hunt(ctx, _state.value.ranges)
+            if (extra.isNotEmpty()) {
+                _state.update { s -> s.copy(ranges = mergeRanges(s.ranges, extra)) }
+            }
         }
     }
 
@@ -96,6 +103,9 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is ScanEvent.Host -> _state.update { s ->
                         s.copy(devices = upsert(s.devices, ev.device))
+                    }
+                    is ScanEvent.Range -> _state.update { s ->
+                        s.copy(ranges = mergeRanges(s.ranges, listOf(ev.range)))
                     }
                     ScanEvent.Done -> _state.update { it.copy(scan = it.scan.copy(active = false)) }
                 }
@@ -150,6 +160,21 @@ class ScannerViewModel(app: Application) : AndroidViewModel(app) {
     fun stopPortScan() {
         portJob?.cancel()
         _state.update { it.copy(portScan = it.portScan?.copy(running = false)) }
+    }
+
+    private fun mergeRanges(current: List<NetworkRange>, incoming: List<NetworkRange>): List<NetworkRange> {
+        val map = LinkedHashMap<String, NetworkRange>()
+        current.forEach { map[it.id] = it }
+        incoming.forEach { extra ->
+            val old = map[extra.id]
+            map[extra.id] = if (old == null) extra else old.copy(
+                localIp = old.localIp ?: extra.localIp,
+                gateway = old.gateway ?: extra.gateway,
+                dns = old.dns.ifEmpty { extra.dns },
+                label = if (old.kind == RangeKind.WIFI) old.label else extra.label,
+            )
+        }
+        return map.values.toList()
     }
 
     private fun upsert(list: List<LanDevice>, incoming: LanDevice): List<LanDevice> {

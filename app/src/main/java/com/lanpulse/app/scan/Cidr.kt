@@ -20,6 +20,9 @@ object Cidr {
 
     fun cidr(ip: String, prefix: Int): String = "${network(ip, prefix)}/$prefix"
 
+    fun contains(network: String, prefix: Int, ip: String): Boolean =
+        network(ip, prefix) == network(network, prefix)
+
     fun hostCount(prefix: Int): Int {
         if (prefix >= 31) return 2
         val raw = 1 shl (32 - prefix)
@@ -37,5 +40,26 @@ object Cidr {
         prefix >= 30 -> 24
         prefix < 24 -> 24
         else -> prefix
+    }
+
+    fun isRfc1918(ip: String): Boolean {
+        val n = ipToLong(ip)
+        return (n and 0xFF000000L) == 0x0A000000L ||
+            (n and 0xFFF00000L) == 0xAC100000L ||
+            (n and 0xFFFF0000L) == 0xC0A80000L
+    }
+
+    fun broadcast(network: String, prefix: Int): String {
+        val mask = if (prefix <= 0) 0L else (0xFFFFFFFFL shl (32 - prefix)) and 0xFFFFFFFFL
+        return longToIp((ipToLong(network) and mask) or (mask.inv() and 0xFFFFFFFFL))
+    }
+
+    fun prefixFromMaskLe(mask: Int): Int {
+        if (mask == 0) return 24
+        val bits = ((mask and 0xff) shl 24) or
+            (((mask shr 8) and 0xff) shl 16) or
+            (((mask shr 16) and 0xff) shl 8) or
+            ((mask shr 24) and 0xff)
+        return Integer.bitCount(bits)
     }
 }
