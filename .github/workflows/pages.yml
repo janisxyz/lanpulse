@@ -1,5 +1,9 @@
 name: GitHub Pages
 
+# Canonical policy is live at https://janisxyz.github.io/lanpulse/
+# (janisxyz/janisxyz.github.io). Project Pages on this repo cannot be created
+# with GITHUB_TOKEN. Enable Settings → Pages → GitHub Actions to activate.
+
 on:
   push:
     branches: [main]
@@ -19,26 +23,25 @@ concurrency:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Enable Pages if missing
+      - id: check
+        name: Detect project Pages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/pages" \
-            -H "Accept: application/vnd.github+json" \
-            -f build_type=workflow
-          true
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
+          if gh api "/repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Project Pages is off. Canonical policy: https://janisxyz.github.io/lanpulse/"
+          fi
+      - if: steps.check.outputs.enabled == 'true'
+        uses: actions/configure-pages@v5
+      - if: steps.check.outputs.enabled == 'true'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: docs
-      - id: deployment
+      - if: steps.check.outputs.enabled == 'true'
         uses: actions/deploy-pages@v4
